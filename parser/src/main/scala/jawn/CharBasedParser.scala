@@ -26,15 +26,12 @@ trait CharBasedParser[J] extends Parser[J] {
     var esc = false
     val sb = charBuilder.reset
     var c = at(j)
-    //var d = at(j+1)
 
-    //while ( continue(c, d) ) {
     while ( continue(c, at(j+1)) ) {
       if (c < ' ') {
         die(j, s"control char (${c.toInt}) in comment")
       } else if (c == '\\') {
         if (!esc) { sb.extend(at(i, j)); esc = true }
-        //(d: @switch) match {
         (at(j+1): @switch) match {
           case 'b'  => { sb.append('\b'); j += 2 }
           case 'f'  => { sb.append('\f'); j += 2 }
@@ -53,7 +50,6 @@ trait CharBasedParser[J] extends Parser[J] {
         j += 1
       }
       c = at(j)
-      //d = at(j+1)
     }
     j
   }

@@ -299,7 +299,6 @@ abstract class Parser[J] {
    * Parse the JSON string in the role of key starting at 'i' and save it into 'ctxt' as string.
    */
    protected[this] final def parseKey(i: Int, ctxt: RawFContext[J]): Int = {
-    //val cont = (c: Char, d: Char) =>  (c != '\"')
     def cont(c: Char, d: =>Char) = (c != '\"')
     val k = parseString(i + 1, ctxt, cont)
     val result = if (charBuilder.isEmpty) at(i + 1, k) else charBuilder.makeString
@@ -314,7 +313,6 @@ abstract class Parser[J] {
     val c = at(i+1)
     /* See if this is a single line comment */
     if (c == '/') {
-      //val cont =  (c: Char, d: Char) =>  ( c != '\n' )
       def cont(c: Char, d: =>Char) = ( c != '\n' )
       val k = parseString(i, ctxt, cont)
       val result = if (charBuilder.isEmpty) at(i + 1, k) else charBuilder.makeString
@@ -322,7 +320,6 @@ abstract class Parser[J] {
       k + 1
     /* See if this is a multi level comment */
     } else if (c == '*') {
-      //val cont =  (c: Char, d: Char) => ( c != '*' ||  d != '/' )
       def cont(c: Char, d: =>Char) = ( c != '*' ||  d != '/' )
       val k = parseString(i, ctxt, cont)
       val result = if (charBuilder.isEmpty) at(i + 2, k) else charBuilder.makeString
@@ -337,7 +334,6 @@ abstract class Parser[J] {
    * Parse the JSON string in the role of value starting at 'i' and save it into 'ctxt' as J value.
    */
   protected[this] final def parseText(i: Int, ctxt: RawFContext[J])(implicit facade: RawFacade[J]): Int = {
-    //val cont = (c: Char, d: Char) =>  (c != '\"')
     def cont(c: Char, d: =>Char) = (c != '\"')
     val k = parseString(i + 1, ctxt, cont)
     val result = if (charBuilder.isEmpty) at(i + 1, k) else charBuilder.makeString

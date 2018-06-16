@@ -33,15 +33,12 @@ trait ByteBasedParser[J] extends Parser[J] {
     var esc = false
     val sb = charBuilder.reset
     var c: Int = byte(j) & 0xff
-    //var d: Int = byte(j+1) & 0xff
 
-    //while ( continue(c.toChar, d.toChar) ) {
     while ( continue(c.toChar, (byte(j+1) & 0xff).toChar) ) {
       if (c < 32) {
         die(j, s"control char (${c.toInt}) in comment")
       } else if (c == 92) {
         if (!esc) { sb.extend(at(i, j)); esc = true }
-        //(d: @switch) match {
         ((byte(j+1) & 0xff): @switch) match {
           case  98 => { sb.append('\b'); j += 2 }
           case 102 => { sb.append('\f'); j += 2 }
@@ -75,7 +72,6 @@ trait ByteBasedParser[J] extends Parser[J] {
         die(j, "invalid UTF-8 encoding")
       }
       c = byte(j) & 0xff
-      //d = byte(j+1) & 0xff
     }
     j
   }

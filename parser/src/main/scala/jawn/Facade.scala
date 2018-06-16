@@ -56,11 +56,12 @@ trait RawFacade[J] {
  * cases where the entire JSON document consists of "333.33".
  */
 trait FContext[J] extends RawFContext[J]{
-  /* In order not to break existing facades override these point enable the new logic with keys and comments. */
+  /* In order not to break existing facades we call @deprecated add.
+   * Override these to enable the new logic with keys and comments. */
   def key(s: CharSequence): Unit = add(s)
   def comment(s: CharSequence): Unit = add(s)
 
-  @deprecated("this method is scheduled for removal","0.12.1-f")
+  @deprecated("this method is scheduled for removal","0.12.2-f1")
   def add(s: CharSequence): Unit
 
   def add(v: J): Unit
