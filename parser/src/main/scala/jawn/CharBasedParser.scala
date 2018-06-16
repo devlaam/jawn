@@ -21,15 +21,15 @@ trait CharBasedParser[J] extends Parser[J] {
    * interpret a multi-char code point incorrectly.
    * Switches to (more expensive) escaped string parsing when required.
    */
-  protected[this] final def parseString(i: Int, ctxt: RawFContext[J], continue: (Char,=>Char)=>Boolean): Int = {
+  protected[this] final def parseString(i: Int, ctxt: RawFContext[J], continue: (Char,=>Char)=>Boolean, kill: (Char)=>Boolean): Int = {
     var j = i
     var esc = false
     val sb = charBuilder.reset
     var c = at(j)
 
     while ( continue(c, at(j+1)) ) {
-      if (c < ' ') {
-        die(j, s"control char (${c.toInt}) in comment")
+      if (kill(c.toChar)) {
+        die(j, s"control char (${c.toInt}) not allowed here")
       } else if (c == '\\') {
         if (!esc) { sb.extend(at(i, j)); esc = true }
         (at(j+1): @switch) match {

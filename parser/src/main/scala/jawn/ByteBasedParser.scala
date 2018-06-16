@@ -28,15 +28,15 @@ trait ByteBasedParser[J] extends Parser[J] {
    * interpret a multi-char code point incorrectly.
    * Switches to (more expensive) escaped string parsing when required.
    */
-  protected[this] final def parseString(i: Int, ctxt: RawFContext[J], continue: (Char,=>Char)=>Boolean): Int = {
+  protected[this] final def parseString(i: Int, ctxt: RawFContext[J], continue: (Char,=>Char)=>Boolean, kill: (Char)=>Boolean): Int = {
     var j = i
     var esc = false
     val sb = charBuilder.reset
     var c: Int = byte(j) & 0xff
 
     while ( continue(c.toChar, (byte(j+1) & 0xff).toChar) ) {
-      if (c < 32) {
-        die(j, s"control char (${c.toInt}) in comment")
+      if (kill(c.toChar)) {
+        die(j, s"control char ($c) not allowed here")
       } else if (c == 92) {
         if (!esc) { sb.extend(at(i, j)); esc = true }
         ((byte(j+1) & 0xff): @switch) match {

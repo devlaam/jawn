@@ -293,14 +293,15 @@ abstract class Parser[J] {
    * General function to extract the sting based. The parameter continue defines
    * until which point must be scanned.
    */
-  protected[this] def parseString(i: Int, ctxt: RawFContext[J], continue: (Char,=>Char) => Boolean): Int
+  protected[this] def parseString(i: Int, ctxt: RawFContext[J], continue: (Char,=>Char) => Boolean, kill: (Char)=>Boolean): Int
 
   /**
    * Parse the JSON string in the role of key starting at 'i' and save it into 'ctxt' as string.
    */
    protected[this] final def parseKey(i: Int, ctxt: RawFContext[J]): Int = {
     def cont(c: Char, d: =>Char) = (c != '\"')
-    val k = parseString(i + 1, ctxt, cont)
+    def kill(c: Char) = (c < ' ')
+    val k = parseString(i + 1, ctxt, cont, kill)
     val result = if (charBuilder.isEmpty) at(i + 1, k) else charBuilder.makeString
     ctxt.key(result, i)
     k + 1
@@ -308,20 +309,25 @@ abstract class Parser[J] {
 
   /**
    * Parse the JSON string in the role of comment starting at 'i' and save it into 'ctxt' as string.
+   * Control characters in comments are allowed (for the may be part of the presentation), but
+   * newline or carriage return terminate a single line comment directly and a null characters
+   * are forbidden. Allowed chars are copied to the buffer.
    */
   protected[this] final def parseComment(i: Int, ctxt: RawFContext[J]): Int = {
     val c = at(i+1)
-    /* See if this is a single line comment */
+    /* See if this is a single line comment, started with 'slash slash' */
     if (c == '/') {
-      def cont(c: Char, d: =>Char) = ( c != '\n' )
-      val k = parseString(i, ctxt, cont)
-      val result = if (charBuilder.isEmpty) at(i + 1, k) else charBuilder.makeString
+      def cont(c: Char, d: =>Char) = ( c != '\n' && c != '\r' )
+      def kill(c: Char) = (c.toInt == 0)
+      val k = parseString(i + 2, ctxt, cont, kill)
+      val result = if (charBuilder.isEmpty) at(i + 2, k) else charBuilder.makeString
       ctxt.comment(result, i)
       k + 1
-    /* See if this is a multi level comment */
+    /* See if this is a multi line comment, started with 'slash star' */
     } else if (c == '*') {
       def cont(c: Char, d: =>Char) = ( c != '*' ||  d != '/' )
-      val k = parseString(i, ctxt, cont)
+      def kill(c: Char) = (c.toInt == 0)
+      val k = parseString(i + 2, ctxt, cont, kill)
       val result = if (charBuilder.isEmpty) at(i + 2, k) else charBuilder.makeString
       ctxt.comment(result, i)
       k + 2
@@ -335,7 +341,8 @@ abstract class Parser[J] {
    */
   protected[this] final def parseText(i: Int, ctxt: RawFContext[J])(implicit facade: RawFacade[J]): Int = {
     def cont(c: Char, d: =>Char) = (c != '\"')
-    val k = parseString(i + 1, ctxt, cont)
+    def kill(c: Char) = (c < ' ')
+    val k = parseString(i + 1, ctxt, cont, kill)
     val result = if (charBuilder.isEmpty) at(i + 1, k) else charBuilder.makeString
     ctxt.add(facade.jstring(result,i),i)
     k + 1
@@ -500,7 +507,7 @@ abstract class Parser[J] {
         rparse(SEP, j, stack)
       } else if (c == '/') {
         val j = parseComment(i, stack.head)
-        rparse(SEP, j, stack)
+        rparse(KEY, j, stack)
       } else {
         die(i, "expected \" or // or /*")
       }
