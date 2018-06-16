@@ -53,4 +53,6 @@ private[jawn] final class CharBuilder {
     cs(len) = c
     len = tlen
   }
+
+  def isEmpty: Boolean = (len == 0)
 }

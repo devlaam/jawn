@@ -56,12 +56,18 @@ trait RawFacade[J] {
  * cases where the entire JSON document consists of "333.33".
  */
 trait FContext[J] extends RawFContext[J]{
+  /* In order not to break existing facades override these point enable the new logic with keys and comments. */
+  def key(s: CharSequence): Unit = add(s)
+  def comment(s: CharSequence): Unit = add(s)
+
+  @deprecated("this method is scheduled for removal","0.12.1-f")
   def add(s: CharSequence): Unit
+
   def add(v: J): Unit
   def finish(): J
 
-
-  def add(s: CharSequence, index: Int) = add(s)
+  def key(s: CharSequence, index: Int): Unit = key(s)
+  def comment(s: CharSequence, index: Int): Unit = comment(s)
   def add(v: J, index: Int) = add(v)
   def finish(index: Int) = finish()
 
@@ -76,7 +82,9 @@ trait FContext[J] extends RawFContext[J]{
  * cases where the entire JSON document consists of "333.33".
  */
 trait RawFContext[J] {
-  def add(s: CharSequence, index: Int): Unit
+  def key(s: CharSequence, index: Int): Unit
+  def comment(s: CharSequence, index: Int): Unit
+
   def add(v: J, index: Int): Unit
   def finish(index: Int): J
   def isObj: Boolean

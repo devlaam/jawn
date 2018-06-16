@@ -283,10 +283,67 @@ abstract class Parser[J] {
     x.toChar
   }
 
+
   /**
-   * Parse the JSON string starting at 'i' and save it into 'ctxt'.
+   * This collects the string if it contains escape characters
    */
-  protected[this] def parseString(i: Int, ctxt: RawFContext[J]): Int
+  protected[this] val charBuilder: CharBuilder
+
+  /**
+   * General function to extract the sting based. The parameter continue defines
+   * until which point must be scanned.
+   */
+  protected[this] def parseString(i: Int, ctxt: RawFContext[J], continue: (Char,=>Char) => Boolean): Int
+
+  /**
+   * Parse the JSON string in the role of key starting at 'i' and save it into 'ctxt' as string.
+   */
+   protected[this] final def parseKey(i: Int, ctxt: RawFContext[J]): Int = {
+    //val cont = (c: Char, d: Char) =>  (c != '\"')
+    def cont(c: Char, d: =>Char) = (c != '\"')
+    val k = parseString(i + 1, ctxt, cont)
+    val result = if (charBuilder.isEmpty) at(i + 1, k) else charBuilder.makeString
+    ctxt.key(result, i)
+    k + 1
+  }
+
+  /**
+   * Parse the JSON string in the role of comment starting at 'i' and save it into 'ctxt' as string.
+   */
+  protected[this] final def parseComment(i: Int, ctxt: RawFContext[J]): Int = {
+    val c = at(i+1)
+    /* See if this is a single line comment */
+    if (c == '/') {
+      //val cont =  (c: Char, d: Char) =>  ( c != '\n' )
+      def cont(c: Char, d: =>Char) = ( c != '\n' )
+      val k = parseString(i, ctxt, cont)
+      val result = if (charBuilder.isEmpty) at(i + 1, k) else charBuilder.makeString
+      ctxt.comment(result, i)
+      k + 1
+    /* See if this is a multi level comment */
+    } else if (c == '*') {
+      //val cont =  (c: Char, d: Char) => ( c != '*' ||  d != '/' )
+      def cont(c: Char, d: =>Char) = ( c != '*' ||  d != '/' )
+      val k = parseString(i, ctxt, cont)
+      val result = if (charBuilder.isEmpty) at(i + 2, k) else charBuilder.makeString
+      ctxt.comment(result, i)
+      k + 2
+    } else {
+      die(i, "expected \" or // or /*")
+    }
+  }
+
+  /**
+   * Parse the JSON string in the role of value starting at 'i' and save it into 'ctxt' as J value.
+   */
+  protected[this] final def parseText(i: Int, ctxt: RawFContext[J])(implicit facade: RawFacade[J]): Int = {
+    //val cont = (c: Char, d: Char) =>  (c != '\"')
+    def cont(c: Char, d: =>Char) = (c != '\"')
+    val k = parseString(i + 1, ctxt, cont)
+    val result = if (charBuilder.isEmpty) at(i + 1, k) else charBuilder.makeString
+    ctxt.add(facade.jstring(result,i),i)
+    k + 1
+  }
 
   /**
    * Parse the JSON constant "true".
@@ -349,7 +406,7 @@ abstract class Parser[J] {
       // we have a single top-level string
       case '"' =>
         val ctxt = facade.singleContext(i)
-        val j = parseString(i, ctxt)
+        val j = parseText(i, ctxt)
         (ctxt.finish(i), j)
 
       // we have a single top-level constant
@@ -404,7 +461,7 @@ abstract class Parser[J] {
           val j = parseNum(i, ctxt)
           rparse(if (ctxt.isObj) OBJEND else ARREND, j, stack)
         } else if (c == '"') {
-          val j = parseString(i, ctxt)
+          val j = parseText(i, ctxt)
           rparse(if (ctxt.isObj) OBJEND else ARREND, j, stack)
         } else if (c == 't') {
           ctxt.add(parseTrue(i), i)
@@ -440,12 +497,16 @@ abstract class Parser[J] {
         }
       }
     } else if (state == KEY) {
-      // we are in an object expecting to see a key.
+      // we are in an object expecting to see a key or a comment
+      // a comment must precede the KEY
       if (c == '"') {
-        val j = parseString(i, stack.head)
+        val j = parseKey(i, stack.head)
+        rparse(SEP, j, stack)
+      } else if (c == '/') {
+        val j = parseComment(i, stack.head)
         rparse(SEP, j, stack)
       } else {
-        die(i, "expected \"")
+        die(i, "expected \" or // or /*")
       }
     } else if (state == SEP) {
       // we are in an object just after a key, expecting to see a colon.

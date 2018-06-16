@@ -18,3 +18,7 @@ TAGS
 .lib
 .ensime_cache
 .idea
+.gitignore
+*.classpath
+*.project
+*.settings
