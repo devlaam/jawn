@@ -1,3 +1,51 @@
+## Jawn-Fork
+
+This work is a small extension to the nice work of Erik Osheim and is 
+released under the same MIT license. It is contained in the branch 
+"comments" for now. 
+
+It adds the ability for the *jawn-parser* to accept comments
+in the json. It also add functions (`key`, `comment` to the `FContext`) 
+that allow you to  extend your AST to capture and process them, but 
+existing AST's should not break,and just ignore the comments.
+
+The parser still conforms to the latest JSON specification 
+https://tools.ietf.org/html/rfc8259. It may be a little slower, in a 
+few  sort tests I could not detect a significant difference on the 
+benchmarks. However, since their is a change in handling of the strings, 
+there should at least be a small difference.
+
+In the extension of the grammar, comments are only allowed before keys 
+in objects, and may be preceded by a `//` or `/*`. The former are 
+closed by a newline (in the form of a `\n` of `\r` whatever comes first, 
+the latter by `*/`. Since `//` effectively defines a single line comment, 
+it cannot be succeeded by JSON content on the same line. Just as with JSON 
+strings, control characters are not allowed in this comment.  Comments between 
+`/*` and  `*/` can spread over multiple lines and may contain any control
+character except `\u0000`. Comments on atomic JSON (just a string, number ...) 
+are not allowed. Also, comments before the opening of an object or array
+are forbidden. Thus comments are strictly bound to keys.
+
+Example, the JSON below will become parseable:
+```json
+    { /* This is form the image library:
+         "examples dot com". */    
+        "Image": {
+          "Width":  800,
+          "Height": 600,
+          "Title":  "View from 15th Floor",
+          // Thumbnails should not exceed 320x240 pixels.
+          "Thumbnail": {
+            "Url":    "http://www.example.com/image/481989943",
+            "Height": 125,
+            "Width":  100
+          },
+        "Animated" : false,
+        "IDs": [116, 943, 234, 38793]
+      }
+    }
+```
+
 ## Jawn
 
 "Jawn is for parsing jay-sawn."
