@@ -19,15 +19,14 @@ In the extension of the grammar, comments are only allowed before keys
 in objects, and may be preceded by a `//` or `/*`. The former are 
 closed by a newline (in the form of a `\n` of `\r` whatever comes first, 
 the latter by `*/`. Since `//` effectively defines a single line comment, 
-it cannot be succeeded by JSON content on the same line. Just as with JSON 
-strings, control characters are not allowed in this comment.  Comments between 
-`/*` and  `*/` can spread over multiple lines and may contain any control
-character except `\u0000`. Comments on atomic JSON (just a string, number ...) 
-are not allowed. Also, comments before the opening of an object or array
-are forbidden. Thus comments are strictly bound to keys.
+it cannot be succeeded by JSON content on the same line.  Comments between 
+`/*` and  `*/` can spread over multiple lines. In both comments  control
+characters except `\u0000` are allowed. Comments on atomic JSON (just a string, 
+number ...) are not allowed. Also, comments before the opening of an object 
+or array are forbidden. Thus comments are strictly bound to keys.
 
 Example, the JSON below will become parseable:
-```json
+```javascript
     { /* This is form the image library:
          "examples dot com". */    
         "Image": {
