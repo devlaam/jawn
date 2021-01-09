@@ -27,7 +27,7 @@ or array are forbidden. Thus comments are strictly bound to keys.
 
 Example, the JSON below will become parseable:
 ```javascript
-    { /* This is form the image library:
+    { /* This is from the image library:
          "examples dot com". */    
         "Image": {
           "Width":  800,
