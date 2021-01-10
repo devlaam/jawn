@@ -1,4 +1,4 @@
-package jawn.util
+package org.typelevel.jawn.util
 
 /**
  * Character sequence representing a lazily-calculated substring.
@@ -41,8 +41,15 @@ final class Slice private[jawn] (s: String, start: Int, limit: Int) extends Char
     if (i < 0 || length <= i) throw new StringIndexOutOfBoundsException(s"index out of range: $i")
     else s.charAt(start + i)
 
-  def subSequence(i: Int, j: Int): Slice =
-    Slice(s, start + i, start + j)
+  def subSequence(i: Int, j: Int): Slice = {
+    if (i < 0) throw new StringIndexOutOfBoundsException(s"i ($i) should be >= 0")
+    if (j < i) throw new StringIndexOutOfBoundsException(s"j ($j) should be >= i ($i)")
+    val start2 = start + i
+    val limit2 = start + j
+    if (start2 > limit) throw new StringIndexOutOfBoundsException(s"i ($i) should be <= limit (${limit - start})")
+    if (limit2 > limit) throw new StringIndexOutOfBoundsException(s"j ($j) should be <= limit (${limit - start})")
+    Slice.unsafe(s, start2, limit2)
+  }
 
   override def toString: String =
     s.substring(start, limit)
@@ -84,11 +91,10 @@ object Slice {
     new Slice(s, 0, s.length)
 
   def apply(s: String, start: Int, limit: Int): Slice =
-    if (start < 0 || limit < start || s.length < limit) {
+    if (start < 0 || limit < start || s.length < limit)
       throw new IndexOutOfBoundsException(s"invalid slice: start=$start, limit=$limit, length=${s.length}")
-    } else {
+    else
       new Slice(s, start, limit)
-    }
 
   def unsafe(s: String, start: Int, limit: Int): Slice =
     new Slice(s, start, limit)

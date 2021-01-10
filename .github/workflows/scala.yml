@@ -1,0 +1,25 @@
+name: Scala
+
+on: [push, pull_request]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        scala: [2.12.12, 2.13.4, 3.0.0-M2, 3.0.0-M3]
+
+    steps:
+    - uses: actions/checkout@v2
+    - uses: olafurpg/setup-scala@v10
+      with:
+        java-version: openjdk@1.11.0
+    - name: Scalafmt
+      if: startsWith(matrix.scala, '2.13')
+      run: sbt scalafmtSbtCheck scalafmtCheckAll
+    - name: Run tests
+      run: sbt ++${{matrix.scala}} test
+    - name: MiMa
+      run: sbt ++${{matrix.scala}} mimaReportBinaryIssues

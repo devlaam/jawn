@@ -1,4 +1,4 @@
-package jawn
+package org.typelevel.jawn
 
 import java.io.File
 import java.nio.ByteBuffer
@@ -33,7 +33,9 @@ case class IncompleteParseException(msg: String) extends Exception(msg)
  */
 abstract class Parser[J] {
 
-  protected[this] final val utf8 = Charset.forName("UTF-8")
+  final protected[this] val utf8 = Charset.forName("UTF-8")
+
+  import Parser.{ARRBEG, ARREND, DATA, ErrorContext, HexChars, KEY, OBJBEG, OBJEND, SEP}
 
   /**
    * Read the byte/char at 'i' as a Char.
@@ -66,44 +68,68 @@ abstract class Parser[J] {
    * The checkpoint() method is used to allow some parsers to store
    * their progress.
    */
-  protected[this] def checkpoint(state: Int, i: Int, stack: List[RawFContext[J]]): Unit
+  protected[this] def checkpoint(state: Int, i: Int, context: FContext[J], stack: List[FContext[J]]): Unit
 
   /**
    * Should be called when parsing is finished.
    */
   protected[this] def close(): Unit
 
-  /**
-   * Valid parser states.
-   */
-  @inline protected[this] final val ARRBEG = 6
-  @inline protected[this] final val OBJBEG = 7
-  @inline protected[this] final val DATA = 1
-  @inline protected[this] final val KEY = 2
-  @inline protected[this] final val SEP = 3
-  @inline protected[this] final val ARREND = 4
-  @inline protected[this] final val OBJEND = 5
-
   protected[this] def newline(i: Int): Unit
   protected[this] def line(): Int
   protected[this] def column(i: Int): Int
 
-  protected[this] final val HexChars: Array[Int] = {
-    val arr = new Array[Int](128)
-    var i = 0
-    while (i < 10) { arr(i + '0') = i; i += 1 }
-    i = 0
-    while (i < 16) { arr(i + 'a') = 10 + i; arr(i + 'A') = 10 + i; i += 1 }
-    arr
-  }
+  /**
+   * Used to generate error messages with character info and offsets.
+   *
+   * Parameters:
+   *
+   *   - i (>=0): the position in the input where the error occurred.
+   *   - msg: the error message to give the user.
+   */
+  protected[this] def die(i: Int, msg: String): Nothing =
+    die(i, msg, ErrorContext)
+
+  /**
+   * A version of `at` that returns as much of the indicated substring as
+   * possible without throwing exceptions.
+   *
+   * This method is necessary because `at(i, j)` may fail with an exception even
+   * when `atEof(i, j)` returns false (see #143 for an example). This method is
+   * a workaround; it is not optimized or robust against invalid input and
+   * should not be used outside of the context of `die`.
+   */
+  @tailrec private[this] def safeAt(i: Int, j: Int): CharSequence =
+    if (j <= i) ""
+    else
+      try at(i, j)
+      catch {
+        case _: Exception =>
+          safeAt(i, j - 1)
+      }
 
   /**
    * Used to generate error messages with character info and offsets.
+   *
+   * Parameters:
+   *
+   *   - i (>=0): the position in the input where the error occurred.
+   *   - msg: the error message to give the user.
+   *   - chars (>=1): the number of characters to provide as context.
    */
-  protected[this] def die(i: Int, msg: String): Nothing = {
+  protected[this] def die(i: Int, msg: String, chars: Int): Nothing = {
     val y = line() + 1
     val x = column(i) + 1
-    val s = "%s got %s (line %d, column %d)" format (msg, at(i), y, x)
+    val got: String =
+      if (atEof(i))
+        "eof"
+      else {
+        var offset = 0
+        while (offset < chars && !atEof(i + offset)) offset += 1
+        val txt = safeAt(i, i + offset)
+        if (atEof(i + offset)) s"'$txt'" else s"'$txt...'"
+      }
+    val s = "%s got %s (line %d, column %d)".format(msg, got, y, x)
     throw ParseException(s, i, y, x)
   }
 
@@ -126,7 +152,7 @@ abstract class Parser[J] {
    * side-effect that we know exactly how the user represented the
    * number.
    */
-  protected[this] final def parseNum(i: Int, ctxt: RawFContext[J])(implicit facade: RawFacade[J]): Int = {
+  final protected[this] def parseNum(i: Int, ctxt: FContext[J])(implicit facade: Facade[J]): Int = {
     var j = i
     var c = at(j)
     var decIndex = -1
@@ -139,21 +165,19 @@ abstract class Parser[J] {
     if (c == '0') {
       j += 1
       c = at(j)
-    } else if ('1' <= c && c <= '9') {
-      while ('0' <= c && c <= '9') { j += 1; c = at(j) }
-    } else {
+    } else if ('1' <= c && c <= '9')
+      while ({ j += 1; c = at(j); '0' <= c && c <= '9' }) ()
+    else
       die(i, "expected digit")
-    }
 
     if (c == '.') {
       decIndex = j - i
       j += 1
       c = at(j)
-      if ('0' <= c && c <= '9') {
-        while ('0' <= c && c <= '9') { j += 1; c = at(j) }
-      } else {
+      if ('0' <= c && c <= '9')
+        while ({ j += 1; c = at(j); '0' <= c && c <= '9' }) ()
+      else
         die(i, "expected digit")
-      }
     }
 
     if (c == 'e' || c == 'E') {
@@ -164,11 +188,10 @@ abstract class Parser[J] {
         j += 1
         c = at(j)
       }
-      if ('0' <= c && c <= '9') {
-        while ('0' <= c && c <= '9') { j += 1; c = at(j) }
-      } else {
+      if ('0' <= c && c <= '9')
+        while ({ j += 1; c = at(j); '0' <= c && c <= '9' }) ()
+      else
         die(i, "expected digit")
-      }
     }
 
     ctxt.add(facade.jnum(at(i, j), decIndex, expIndex, i), i)
@@ -189,7 +212,7 @@ abstract class Parser[J] {
    *
    * This method has all the same caveats as the previous method.
    */
-  protected[this] final def parseNumSlow(i: Int, ctxt: RawFContext[J])(implicit facade: RawFacade[J]): Int = {
+  final protected[this] def parseNumSlow(i: Int, ctxt: FContext[J])(implicit facade: Facade[J]): Int = {
     var j = i
     var c = at(j)
     var decIndex = -1
@@ -207,36 +230,36 @@ abstract class Parser[J] {
         return j
       }
       c = at(j)
-    } else if ('1' <= c && c <= '9') {
-      while ('0' <= c && c <= '9') {
+    } else if ('1' <= c && c <= '9')
+      while ({
         j += 1
         if (atEof(j)) {
           ctxt.add(facade.jnum(at(i, j), decIndex, expIndex, i), i)
           return j
         }
         c = at(j)
-      }
-    } else {
+        '0' <= c && c <= '9'
+      }) ()
+    else
       die(i, "expected digit")
-    }
 
     if (c == '.') {
       // any valid input will require at least one digit after .
       decIndex = j - i
       j += 1
       c = at(j)
-      if ('0' <= c && c <= '9') {
-        while ('0' <= c && c <= '9') {
+      if ('0' <= c && c <= '9')
+        while ({
           j += 1
           if (atEof(j)) {
             ctxt.add(facade.jnum(at(i, j), decIndex, expIndex, i), i)
             return j
           }
           c = at(j)
-        }
-      } else {
+          '0' <= c && c <= '9'
+        }) ()
+      else
         die(i, "expected digit")
-      }
     }
 
     if (c == 'e' || c == 'E') {
@@ -248,18 +271,18 @@ abstract class Parser[J] {
         j += 1
         c = at(j)
       }
-      if ('0' <= c && c <= '9') {
-        while ('0' <= c && c <= '9') {
+      if ('0' <= c && c <= '9')
+        while ({
           j += 1
           if (atEof(j)) {
             ctxt.add(facade.jnum(at(i, j), decIndex, expIndex, i), i)
             return j
           }
           c = at(j)
-        }
-      } else {
+          '0' <= c && c <= '9'
+        }) ()
+      else
         die(i, "expected digit")
-      }
     }
 
     ctxt.add(facade.jnum(at(i, j), decIndex, expIndex, i), i)
@@ -272,37 +295,38 @@ abstract class Parser[J] {
    * NOTE: This is only capable of generating characters from the basic plane.
    * This is why it can only return Char instead of Int.
    */
-  protected[this] final def descape(s: CharSequence): Char = {
+  final protected[this] def descape(pos: Int, s: CharSequence): Char = {
     val hc = HexChars
     var i = 0
     var x = 0
     while (i < 4) {
-      x = (x << 4) | hc(s.charAt(i).toInt)
+      val n = hc(s.charAt(i).toInt)
+      if (n < 0) die(pos, "expected valid unicode escape")
+      x = (x << 4) | n
       i += 1
     }
     x.toChar
   }
 
-
   /**
    * This collects the string if it contains escape characters
    */
-  protected[this] val charBuilder: CharBuilder
+  protected[this] val builder: StringBuilder
 
   /**
    * General function to extract the sting based. The parameter continue defines
    * until which point must be scanned.
    */
-  protected[this] def parseString(i: Int, ctxt: RawFContext[J], continue: (Char,=>Char) => Boolean, kill: (Char)=>Boolean): Int
+  protected[this] def parseString(i: Int, continue: (Char,=>Char) => Boolean, kill: (Char)=>Boolean): Int
 
   /**
    * Parse the JSON string in the role of key starting at 'i' and save it into 'ctxt' as string.
    */
-   protected[this] final def parseKey(i: Int, ctxt: RawFContext[J]): Int = {
+   final protected[this] def parseKey(i: Int, ctxt: FContext[J]): Int = {
     def cont(c: Char, d: =>Char) = (c != '\"')
     def kill(c: Char) = (c < ' ')
-    val k = parseString(i + 1, ctxt, cont, kill)
-    val result = if (charBuilder.isEmpty) at(i + 1, k) else charBuilder.makeString
+    val k = parseString(i + 1, cont, kill)
+    val result = if (builder.isEmpty) at(i + 1, k) else builder.toString()
     ctxt.key(result, i)
     k + 1
   }
@@ -313,22 +337,22 @@ abstract class Parser[J] {
    * newline or carriage return terminate a single line comment directly and a null characters
    * are forbidden. Allowed chars are copied to the buffer.
    */
-  protected[this] final def parseComment(i: Int, ctxt: RawFContext[J]): Int = {
+  final protected[this] def parseComment(i: Int, ctxt: FContext[J]): Int = {
     val c = at(i+1)
     /* See if this is a single line comment, started with 'slash slash' */
     if (c == '/') {
       def cont(c: Char, d: =>Char) = ( c != '\n' && c != '\r' )
       def kill(c: Char) = (c.toInt == 0)
-      val k = parseString(i + 2, ctxt, cont, kill)
-      val result = if (charBuilder.isEmpty) at(i + 2, k) else charBuilder.makeString
+      val k = parseString(i + 2, cont, kill)
+      val result = if (builder.isEmpty) at(i + 2, k) else builder.toString()
       ctxt.comment(result, i)
       k + 1
     /* See if this is a multi line comment, started with 'slash star' */
     } else if (c == '*') {
       def cont(c: Char, d: =>Char) = ( c != '*' ||  d != '/' )
       def kill(c: Char) = (c.toInt == 0)
-      val k = parseString(i + 2, ctxt, cont, kill)
-      val result = if (charBuilder.isEmpty) at(i + 2, k) else charBuilder.makeString
+      val k = parseString(i + 2, cont, kill)
+      val result = if (builder.isEmpty) at(i + 2, k) else builder.toString()
       ctxt.comment(result, i)
       k + 2
     } else {
@@ -339,11 +363,11 @@ abstract class Parser[J] {
   /**
    * Parse the JSON string in the role of value starting at 'i' and save it into 'ctxt' as J value.
    */
-  protected[this] final def parseText(i: Int, ctxt: RawFContext[J])(implicit facade: RawFacade[J]): Int = {
+  final protected[this] def parseText(i: Int, ctxt: FContext[J])(implicit facade: Facade[J]): Int = {
     def cont(c: Char, d: =>Char) = (c != '\"')
     def kill(c: Char) = (c < ' ')
     val k = parseString(i + 1, ctxt, cont, kill)
-    val result = if (charBuilder.isEmpty) at(i + 1, k) else charBuilder.makeString
+    val result = if (builder.isEmpty) at(i + 1, k) else builder.toString()
     ctxt.add(facade.jstring(result,i),i)
     k + 1
   }
@@ -353,52 +377,55 @@ abstract class Parser[J] {
    *
    * Note that this method assumes that the first character has already been checked.
    */
-  protected[this] final def parseTrue(i: Int)(implicit facade: RawFacade[J]): J =
-    if (at(i + 1) == 'r' && at(i + 2) == 'u' && at(i + 3) == 'e') {
+  final protected[this] def parseTrue(i: Int)(implicit facade: Facade[J]): J =
+    if (at(i + 1) == 'r' && at(i + 2) == 'u' && at(i + 3) == 'e')
       facade.jtrue(i)
-    } else {
+    else
       die(i, "expected true")
-    }
 
   /**
    * Parse the JSON constant "false".
    *
    * Note that this method assumes that the first character has already been checked.
    */
-  protected[this] final def parseFalse(i: Int)(implicit facade: RawFacade[J]): J =
-    if (at(i + 1) == 'a' && at(i + 2) == 'l' && at(i + 3) == 's' && at(i + 4) == 'e') {
+  final protected[this] def parseFalse(i: Int)(implicit facade: Facade[J]): J =
+    if (at(i + 1) == 'a' && at(i + 2) == 'l' && at(i + 3) == 's' && at(i + 4) == 'e')
       facade.jfalse(i)
-    } else {
+    else
       die(i, "expected false")
-    }
 
   /**
    * Parse the JSON constant "null".
    *
    * Note that this method assumes that the first character has already been checked.
    */
-  protected[this] final def parseNull(i: Int)(implicit facade: RawFacade[J]): J =
-    if (at(i + 1) == 'u' && at(i + 2) == 'l' && at(i + 3) == 'l') {
+  final protected[this] def parseNull(i: Int)(implicit facade: Facade[J]): J =
+    if (at(i + 1) == 'u' && at(i + 2) == 'l' && at(i + 3) == 'l')
       facade.jnull(i)
-    } else {
+    else
       die(i, "expected null")
-    }
 
   /**
    * Parse and return the next JSON value and the position beyond it.
    */
-  protected[this] final def parse(i: Int)(implicit facade: RawFacade[J]): (J, Int) = try {
+  final protected[this] def parse(i: Int)(implicit facade: Facade[J]): (J, Int) =
+    try parseTop(i)
+    catch {
+      case _: IndexOutOfBoundsException => throw IncompleteParseException("exhausted input")
+    }
+
+  @tailrec final protected[this] def parseTop(i: Int)(implicit facade: Facade[J]): (J, Int) =
     (at(i): @switch) match {
       // ignore whitespace
-      case ' ' => parse(i + 1)
-      case '\t' => parse(i + 1)
-      case '\r' => parse(i + 1)
-      case '\n' => newline(i); parse(i + 1)
+      case ' ' => parseTop(i + 1)
+      case '\t' => parseTop(i + 1)
+      case '\r' => parseTop(i + 1)
+      case '\n' => newline(i); parseTop(i + 1)
 
       // if we have a recursive top-level structure, we'll delegate the parsing
       // duties to our good friend rparse().
-      case '[' => rparse(ARRBEG, i + 1, facade.arrayContext(i) :: Nil)
-      case '{' => rparse(OBJBEG, i + 1, facade.objectContext(i) :: Nil)
+      case '[' => rparse(ARRBEG, i + 1, facade.arrayContext(i), Nil)
+      case '{' => rparse(OBJBEG, i + 1, facade.objectContext(i), Nil)
 
       // we have a single top-level number
       case '-' | '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' =>
@@ -420,10 +447,6 @@ abstract class Parser[J] {
       // invalid
       case _ => die(i, "expected json value")
     }
-  } catch {
-    case _: IndexOutOfBoundsException =>
-      throw IncompleteParseException("exhausted input")
-  }
 
   /**
    * Tail-recursive parsing method to do the bulk of JSON parsing.
@@ -440,132 +463,146 @@ abstract class Parser[J] {
    * improvements.
    */
   @tailrec
-  protected[this] final def rparse(state: Int, j: Int, stack: List[RawFContext[J]])(implicit facade: RawFacade[J]): (J, Int) = {
+  final protected[this] def rparse(
+    state: Int,
+    j: Int,
+    context: FContext[J],
+    stack: List[FContext[J]]
+  )(implicit facade: Facade[J]): (J, Int) = {
     val i = reset(j)
-    checkpoint(state, i, stack)
+    checkpoint(state, i, context, stack)
 
     val c = at(i)
 
     if (c == '\n') {
       newline(i)
-      rparse(state, i + 1, stack)
-    } else if (c == ' ' || c == '\t' || c == '\r') {
-      rparse(state, i + 1, stack)
-    } else if (state == DATA) {
+      rparse(state, i + 1, context, stack)
+    } else if (c == ' ' || c == '\t' || c == '\r')
+      rparse(state, i + 1, context, stack)
+    else if (state == DATA)
       // we are inside an object or array expecting to see data
-      if (c == '[') {
-        rparse(ARRBEG, i + 1, facade.arrayContext(i) :: stack)
-      } else if (c == '{') {
-        rparse(OBJBEG, i + 1, facade.objectContext(i) :: stack)
-      } else {
-        val ctxt = stack.head
-
-        if ((c >= '0' && c <= '9') || c == '-') {
-          val j = parseNum(i, ctxt)
-          rparse(if (ctxt.isObj) OBJEND else ARREND, j, stack)
-        } else if (c == '"') {
-          val j = parseText(i, ctxt)
-          rparse(if (ctxt.isObj) OBJEND else ARREND, j, stack)
-        } else if (c == 't') {
-          ctxt.add(parseTrue(i), i)
-          rparse(if (ctxt.isObj) OBJEND else ARREND, i + 4, stack)
-        } else if (c == 'f') {
-          ctxt.add(parseFalse(i), i)
-          rparse(if (ctxt.isObj) OBJEND else ARREND, i + 5, stack)
-        } else if (c == 'n') {
-          ctxt.add(parseNull(i), i)
-          rparse(if (ctxt.isObj) OBJEND else ARREND, i + 4, stack)
-        } else {
-          die(i, "expected json value")
-        }
-      }
-    } else if (
+      if (c == '[')
+        rparse(ARRBEG, i + 1, facade.arrayContext(i), context :: stack)
+      else if (c == '{')
+        rparse(OBJBEG, i + 1, facade.objectContext(i), context :: stack)
+      else if ((c >= '0' && c <= '9') || c == '-') {
+        val j = parseNum(i, context)
+        rparse(if (context.isObj) OBJEND else ARREND, j, context, stack)
+      } else if (c == '"') {
+        val j = parseText(i, context)
+        rparse(if (context.isObj) OBJEND else ARREND, j, context, stack)
+      } else if (c == 't') {
+        context.add(parseTrue(i), i)
+        rparse(if (context.isObj) OBJEND else ARREND, i + 4, context, stack)
+      } else if (c == 'f') {
+        context.add(parseFalse(i), i)
+        rparse(if (context.isObj) OBJEND else ARREND, i + 5, context, stack)
+      } else if (c == 'n') {
+        context.add(parseNull(i), i)
+        rparse(if (context.isObj) OBJEND else ARREND, i + 4, context, stack)
+      } else
+        die(i, "expected json value")
+    else if (
       (c == ']' && (state == ARREND || state == ARRBEG)) ||
       (c == '}' && (state == OBJEND || state == OBJBEG))
-    ) {
+    )
       // we are inside an array or object and have seen a key or a closing
       // brace, respectively.
-      if (stack.isEmpty) {
-        error("invalid stack")
-      } else {
-        val ctxt1 = stack.head
-        val tail = stack.tail
-
-        if (tail.isEmpty) {
-          (ctxt1.finish(i), i + 1)
-        } else {
-          val ctxt2 = tail.head
-          ctxt2.add(ctxt1.finish(i), i)
-          rparse(if (ctxt2.isObj) OBJEND else ARREND, i + 1, tail)
-        }
+      if (stack.isEmpty)
+        (context.finish(i), i + 1)
+      else {
+        val ctxt2 = stack.head
+        ctxt2.add(context.finish(i), i)
+        rparse(if (ctxt2.isObj) OBJEND else ARREND, i + 1, ctxt2, stack.tail)
       }
-    } else if (state == KEY) {
+    else if (state == KEY)
       // we are in an object expecting to see a key or a comment
       // a comment must precede the KEY
       if (c == '"') {
-        val j = parseKey(i, stack.head)
-        rparse(SEP, j, stack)
+        val j = parseKey(i, context)
+        rparse(SEP, j, context, stack)
       } else if (c == '/') {
-        val j = parseComment(i, stack.head)
-        rparse(KEY, j, stack)
+        val j = parseComment(i, context)
+        rparse(KEY, j, context, stack)
       } else {
         die(i, "expected \" or // or /*")
-      }
-    } else if (state == SEP) {
+    else if (state == SEP)
       // we are in an object just after a key, expecting to see a colon.
-      if (c == ':') {
-        rparse(DATA, i + 1, stack)
-      } else {
+      if (c == ':')
+        rparse(DATA, i + 1, context, stack)
+      else
         die(i, "expected :")
-      }
-    } else if (state == ARREND) {
+    else if (state == ARREND)
       // we are in an array, expecting to see a comma (before more data).
-      if (c == ',') {
-        rparse(DATA, i + 1, stack)
-      } else {
+      if (c == ',')
+        rparse(DATA, i + 1, context, stack)
+      else
         die(i, "expected ] or ,")
-      }
-    } else if (state == OBJEND) {
+    else if (state == OBJEND)
       // we are in an object, expecting to see a comma (before more data).
-      if (c == ',') {
-        rparse(KEY, i + 1, stack)
-      } else {
+      if (c == ',')
+        rparse(KEY, i + 1, context, stack)
+      else
         die(i, "expected } or ,")
-      }
-    } else if (state == ARRBEG) {
+    else if (state == ARRBEG)
       // we are starting an array, expecting to see data or a closing bracket.
-      rparse(DATA, i, stack)
-    } else {
+      rparse(DATA, i, context, stack)
+    else
       // we are starting an object, expecting to see a key or a closing brace.
-      rparse(KEY, i, stack)
-    }
+      rparse(KEY, i, context, stack)
   }
 }
 
-
 object Parser {
 
-  def parseUnsafe[J](s: String)(implicit facade: RawFacade[J]): J =
+  def parseUnsafe[J](s: String)(implicit facade: Facade[J]): J =
     new StringParser(s).parse()
 
-  def parseFromString[J](s: String)(implicit facade: RawFacade[J]): Try[J] =
-    Try(new StringParser[J](s).parse)
+  def parseFromString[J](s: String)(implicit facade: Facade[J]): Try[J] =
+    Try(new StringParser[J](s).parse())
 
-  def parseFromCharSequence[J](cs: CharSequence)(implicit facade: RawFacade[J]): Try[J] =
-    Try(new CharSequenceParser[J](cs).parse)
+  def parseFromCharSequence[J](cs: CharSequence)(implicit facade: Facade[J]): Try[J] =
+    Try(new CharSequenceParser[J](cs).parse())
 
-  def parseFromPath[J](path: String)(implicit facade: RawFacade[J]): Try[J] =
-    Try(ChannelParser.fromFile[J](new File(path)).parse)
+  def parseFromPath[J](path: String)(implicit facade: Facade[J]): Try[J] =
+    Try(ChannelParser.fromFile[J](new File(path)).parse())
 
-  def parseFromFile[J](file: File)(implicit facade: RawFacade[J]): Try[J] =
-    Try(ChannelParser.fromFile[J](file).parse)
+  def parseFromFile[J](file: File)(implicit facade: Facade[J]): Try[J] =
+    Try(ChannelParser.fromFile[J](file).parse())
 
-  def parseFromChannel[J](ch: ReadableByteChannel)(implicit facade: RawFacade[J]): Try[J] =
-    Try(ChannelParser.fromChannel[J](ch).parse)
+  def parseFromChannel[J](ch: ReadableByteChannel)(implicit facade: Facade[J]): Try[J] =
+    Try(ChannelParser.fromChannel[J](ch).parse())
 
-  def parseFromByteBuffer[J](buf: ByteBuffer)(implicit facade: RawFacade[J]): Try[J] =
-    Try(new ByteBufferParser[J](buf).parse)
+  def parseFromByteBuffer[J](buf: ByteBuffer)(implicit facade: Facade[J]): Try[J] =
+    Try(new ByteBufferParser[J](buf).parse())
 
-  def async[J](mode: AsyncParser.Mode)(implicit facade: RawFacade[J]): AsyncParser[J] =
-    AsyncParser[J](mode)
+  def parseFromByteArray[J](src: Array[Byte])(implicit facade: Facade[J]): Try[J] =
+    Try(new ByteArrayParser[J](src).parse())
+
+  def async[J](mode: AsyncParser.Mode): AsyncParser[J] = AsyncParser[J](mode)
+
+  /**
+   * Private variables.
+   */
+  /**
+   * Valid parser states.
+   */
+  @inline final private[jawn] val ARRBEG = 6
+  @inline final private[jawn] val OBJBEG = 7
+  @inline final private[jawn] val DATA = 1
+  @inline final private[jawn] val KEY = 2
+  @inline final private[jawn] val SEP = 3
+  @inline final private[jawn] val ARREND = 4
+  @inline final private[jawn] val OBJEND = 5
+
+  final private[jawn] val HexChars: Array[Int] = {
+    val arr = Array.fill(128)(-1)
+    var i = 0
+    while (i < 10) { arr(i + '0') = i; i += 1 }
+    i = 0
+    while (i < 6) { arr(i + 'a') = 10 + i; arr(i + 'A') = 10 + i; i += 1 }
+    arr
+  }
+
+  final private[jawn] val ErrorContext = 6
 }

@@ -1,7 +1,7 @@
-package jawn
+package org.typelevel.jawn
 package ast
 
-import java.lang.Double.{isNaN, isInfinite}
+import java.lang.Double.{isInfinite, isNaN}
 import scala.collection.mutable
 import scala.util.hashing.MurmurHash3
 
@@ -59,7 +59,7 @@ sealed abstract class JValue {
 }
 
 object JValue {
-  implicit val facade: RawFacade[JValue] = JawnFacade
+  implicit val facade: Facade[JValue] = JawnFacade
 }
 
 sealed abstract class JAtom extends JValue {
@@ -288,7 +288,7 @@ object JArray { self =>
   final def empty: JArray =
     JArray(new Array[JValue](0))
 
-  final def fromSeq(js: Seq[JValue]): JArray =
+  final def fromSeq(js: collection.Seq[JValue]): JArray =
     JArray(js.toArray)
 }
 
@@ -307,8 +307,11 @@ case class JObject(vs: mutable.Map[String, JValue]) extends JValue {
 
 object JObject { self =>
   final def empty: JObject =
-    JObject(mutable.Map.empty)
+    JObject(mutable.TreeMap.empty)
 
-  final def fromSeq(js: Seq[(String, JValue)]): JObject =
-    JObject(mutable.Map(js: _*))
+  final def fromSeq(js: collection.Seq[(String, JValue)]): JObject = {
+    val builder = mutable.TreeMap.newBuilder[String, JValue]
+    builder ++= js
+    JObject(builder.result)
+  }
 }

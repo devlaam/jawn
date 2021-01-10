@@ -1,25 +1,21 @@
-package jawn
+package org.typelevel.jawn
 package parser
 
-import org.scalatest._
+import org.scalacheck.Properties
+import org.typelevel.claimant.Claim
 
-import java.nio.channels.ByteChannel
-import scala.util.Success
+class ChannelSpec extends Properties("ChannelSpec") {
 
-class ChannelSpec extends PropSpec with Matchers {
-
-  property("large strings in files are ok") {
+  property("large strings in files are ok") = {
     val M = 1000000
     val q = "\""
     val big = q + ("x" * (40 * M)) + q
     val bigEscaped = q + ("\\\\" * (20 * M)) + q
 
-    TestUtil.withTemp(big) { t =>
-      Parser.parseFromFile(t)(NullFacade).isSuccess shouldBe true
-    }
+    val ok1 = TestUtil.withTemp(big)(t => Parser.parseFromFile(t)(Facade.NullFacade).isSuccess)
 
-    TestUtil.withTemp(bigEscaped) { t =>
-      Parser.parseFromFile(t)(NullFacade).isSuccess shouldBe true
-    }
+    val ok2 = TestUtil.withTemp(bigEscaped)(t => Parser.parseFromFile(t)(Facade.NullFacade).isSuccess)
+
+    Claim(ok1 && ok2)
   }
 }

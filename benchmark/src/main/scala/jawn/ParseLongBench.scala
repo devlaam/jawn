@@ -1,12 +1,9 @@
-package jawn
+package org.typelevel.jawn
 package benchmark
 
-import java.io.{BufferedReader, File, FileInputStream, FileReader}
 import java.util.concurrent.TimeUnit
-import org.openjdk.jmh.annotations._
-import scala.collection.mutable
 
-import jawn.util
+import org.openjdk.jmh.annotations._
 
 case class Slice(s: String, begin: Int, limit: Int) extends CharSequence {
   val length: Int = limit - begin
