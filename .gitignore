@@ -19,6 +19,7 @@ TAGS
 .ensime_cache
 .idea
 .gitignore
+.bsp
 *.classpath
 *.project
 *.settings

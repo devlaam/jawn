@@ -366,7 +366,7 @@ abstract class Parser[J] {
   final protected[this] def parseText(i: Int, ctxt: FContext[J])(implicit facade: Facade[J]): Int = {
     def cont(c: Char, d: =>Char) = (c != '\"')
     def kill(c: Char) = (c < ' ')
-    val k = parseString(i + 1, ctxt, cont, kill)
+    val k = parseString(i + 1, cont, kill)
     val result = if (builder.isEmpty) at(i + 1, k) else builder.toString()
     ctxt.add(facade.jstring(result,i),i)
     k + 1
@@ -526,6 +526,7 @@ abstract class Parser[J] {
         rparse(KEY, j, context, stack)
       } else {
         die(i, "expected \" or // or /*")
+      }
     else if (state == SEP)
       // we are in an object just after a key, expecting to see a colon.
       if (c == ':')

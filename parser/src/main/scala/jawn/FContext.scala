@@ -8,9 +8,9 @@ package org.typelevel.jawn
  * cases where the entire JSON document consists of "333.33".
  */
 trait FContext[J] {
-  
+
   /* In order not to break existing facades we call add.
-   * Override these to enable the new logic with keys and comments. 
+   * Override these to enable the new logic with keys and comments.
    * In that case you can leave the implemention of add empty. */
   def key(s: CharSequence, index: Int): Unit = add(s, index)
   def comment(s: CharSequence, index: Int): Unit  = add(s, index)
@@ -42,7 +42,7 @@ object FContext {
     final def add(s: CharSequence, index: Int): Unit = add(s)
     final def add(v: J, index: Int): Unit = add(v)
     final def finish(index: Int): J = finish()
-    
+
     final override def key(s: CharSequence, index: Int): Unit = key(s)
     final override def comment(s: CharSequence, index: Int): Unit = comment(s)
   }

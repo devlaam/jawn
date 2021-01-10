@@ -24,14 +24,15 @@ trait CharBasedParser[J] extends Parser[J] {
   protected[this] final def parseString(i: Int, continue: (Char,=>Char)=>Boolean, kill: (Char)=>Boolean): Int = {
     var j = i
     var esc = false
+    var c = at(j)
     val sb = builder
     sb.setLength(0)
 
     while ( continue(c, at(j+1)) ) {
       if (kill(c.toChar)) {
-        die(j, s"control char (${c.toInt}) not allowed here", 1)
+        die(j, s"control char (${c.toInt}) in string", 1)
       } else if (c == '\\') {
-        if (!esc) { sb.extend(at(i, j)); esc = true }
+        if (!esc) { sb.append(at(i, j)); esc = true }
         (at(j+1): @switch) match {
           case 'b'  => { sb.append('\b'); j += 2 }
           case 'f'  => { sb.append('\f'); j += 2 }

@@ -36,7 +36,7 @@ trait ByteBasedParser[J] extends Parser[J] {
 
     while ( continue(c.toChar, (byte(j+1) & 0xff).toChar) ) {
       if (kill(c.toChar)) {
-        die(j, s"control char ($c) not allowed here", 1)
+        die(j, s"control char (${c.toInt}) in string", 1)
       } else if (c == 92) {
         if (!esc) { sb.append(at(i, j)); esc = true }
         ((byte(j+1) & 0xff): @switch) match {
