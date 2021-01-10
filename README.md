@@ -7,7 +7,7 @@ released under the same MIT license. It is contained in the branch
 It adds the ability for the *jawn-parser* to accept comments
 in the json. It also add functions (`key`, `comment` to the `FContext`) 
 that allow you to  extend your AST to capture and process them, but 
-existing AST's should not break,and just ignore the comments.
+existing AST's should not break, and just ignore the comments.
 
 The parser still conforms to the latest JSON specification 
 https://tools.ietf.org/html/rfc8259. It may be a little slower, in a 
@@ -19,7 +19,7 @@ In the extension of the grammar, comments are only allowed before keys
 in objects, and may be preceded by a `//` or `/*`. The former are 
 closed by a newline (in the form of a `\n` of `\r` whatever comes first, 
 the latter by `*/`. Since `//` effectively defines a single line comment, 
-it cannot be succeeded by JSON content on the same line.  Comments between 
+it cannot be followed by JSON content on the same line.  Comments between 
 `/*` and  `*/` can spread over multiple lines. In both comments  control
 characters except `\u0000` are allowed. Comments on atomic JSON (just a string, 
 number ...) are not allowed. Also, comments before the opening of an object 
@@ -44,6 +44,9 @@ Example, the JSON below will become parseable:
       }
     }
 ```
+
+See the file `/parser/src/test/scala/jawn/CommentCheck.scalaCommentCheck.scala` 
+for possible usage. 
 
 ## Jawn
 
